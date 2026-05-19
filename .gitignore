@@ -1,0 +1,22 @@
+# macOS junk
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Editor cruft
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local secrets (none expected in this repo, but defensive)
+*.token
+*.secret
+.env

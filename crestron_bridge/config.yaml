@@ -1,0 +1,34 @@
+name: "Crestron CIP Bridge"
+description: "HTTP API bridge to a Crestron Pro 2 via CIP protocol. One instance per stage."
+version: "1.0.0"
+slug: "crestron_bridge"
+init: false
+arch:
+  - amd64
+  - aarch64
+  - armv7
+  - armhf
+  - i386
+url: "https://github.com/staceydodds/crestron-bridge"
+boot: auto
+startup: application
+homeassistant_api: true
+hassio_api: false
+host_network: false
+ports:
+  "8765/tcp": 8765
+ports_description:
+  "8765/tcp": "Bridge HTTP API (called by HA's rest_command entries)"
+options:
+  pro2_ip: "192.168.1.70"
+  ipid: 4
+  stage_id: "stage7"
+  http_port: 8765
+  log_level: "info"
+schema:
+  pro2_ip: str
+  ipid: int(1,255)
+  stage_id: str
+  http_port: port
+  log_level: list(debug|info|warning|error)
+image: null

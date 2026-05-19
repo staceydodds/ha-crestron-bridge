@@ -1,0 +1,7 @@
+# Build configuration for the Crestron CIP Bridge add-on.
+# Tells the HA supervisor which base image to use when building the
+# container for each supported architecture. The BUILD_FROM ARG in
+# the Dockerfile is set to one of these values at build time.
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base:latest
+  aarch64: ghcr.io/home-assistant/aarch64-base:latest

@@ -6,10 +6,7 @@ init: false
 arch:
   - amd64
   - aarch64
-  - armv7
-  - armhf
-  - i386
-url: "https://github.com/staceydodds/crestron-bridge"
+url: "https://github.com/staceydodds/ha-crestron-bridge"
 boot: auto
 startup: application
 homeassistant_api: true
@@ -31,4 +28,3 @@ schema:
   stage_id: str
   http_port: port
   log_level: list(debug|info|warning|error)
-image: null

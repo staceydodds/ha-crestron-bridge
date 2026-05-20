@@ -1,6 +1,6 @@
 name: "Crestron CIP Bridge"
 description: "HTTP API bridge to a Crestron Pro 2 via CIP protocol. One instance per stage."
-version: "1.0.1"
+version: "1.0.2"
 slug: "crestron_bridge"
 init: false
 arch:

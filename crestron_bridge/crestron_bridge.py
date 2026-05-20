@@ -188,6 +188,18 @@ SERIAL_JOIN_DISCOVERY_RANGE = range(1, 51)
 fader_state = {j: 0 for j in FADERS}
 state_lock = threading.Lock()
 
+# Self-echo suppression: when the bridge writes a fader value, Crestron
+# echoes the new value back via the same analog join. Without this, the
+# echo gets forwarded to HA's input_number, which triggers the dashboard
+# automation, which POSTs to the bridge again — fighting any in-progress
+# user drag and making sliders feel jerky. We track recent writes here
+# and skip the forward step when an inbound value matches one we just
+# sent. Tolerance is ~1% of 65535 to absorb minor Crestron rounding.
+last_write = {}  # {join: (monotonic_ts, raw_value)}
+last_write_lock = threading.Lock()
+LAST_WRITE_SUPPRESS_SEC = 0.4
+ECHO_VALUE_TOLERANCE = 656  # raw units (~1%)
+
 # Projector telemetry state
 # warming_pct / cooling_pct default to 100 (the "idle" value per Crestron
 # gauge semantics — 100% = nothing happening). Defaulting these to 0
@@ -209,14 +221,16 @@ cip = None
 
 
 def forward_state_to_ha(join, value):
-    """Push the current fader value back to HA's input_number entity."""
+    """Push the current fader value back to HA's input_number entity.
+    Rounds to nearest integer percent (no 5% snap) so live drag from the
+    dashboard doesn't get chunked back into 5-point increments."""
     if join not in JOIN_TO_HA_ENTITY:
         return
     if not HA_TOKEN:
         return
 
     entity_id = JOIN_TO_HA_ENTITY[join]
-    pct = round(value / 65535 * 100 / 5) * 5
+    pct = round(value / 65535 * 100)
     pct = max(0, min(100, pct))
 
     try:
@@ -237,14 +251,28 @@ def forward_state_to_ha(join, value):
 
 
 def state_cb(sigtype, join, value):
-    if join in FADERS:
-        with state_lock:
-            fader_state[join] = value
-        threading.Thread(
-            target=forward_state_to_ha,
-            args=(join, value),
-            daemon=True,
-        ).start()
+    if join not in FADERS:
+        return
+    with state_lock:
+        fader_state[join] = value
+
+    # Self-echo suppression: if Crestron is echoing back a value we just
+    # wrote (within the suppression window, near the value we sent), do
+    # not forward to HA. This prevents the bridge from fighting an
+    # in-progress user drag on the dashboard slider.
+    with last_write_lock:
+        entry = last_write.get(join)
+    if entry is not None:
+        ts, last_val = entry
+        if (time.monotonic() - ts) < LAST_WRITE_SUPPRESS_SEC:
+            if abs(value - last_val) <= ECHO_VALUE_TOLERANCE:
+                return
+
+    threading.Thread(
+        target=forward_state_to_ha,
+        args=(join, value),
+        daemon=True,
+    ).start()
 
 
 def projector_analog_cb(sigtype, join, value):
@@ -326,6 +354,10 @@ def pulse(join):
 
 def set_fader_raw(join, value):
     value = max(0, min(65535, int(value)))
+    # Record this write so the inbound echo of the same value is
+    # suppressed in state_cb (prevents fighting user drag).
+    with last_write_lock:
+        last_write[join] = (time.monotonic(), value)
     cip.set("a", join, value)
 
 

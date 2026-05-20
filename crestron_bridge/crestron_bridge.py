@@ -189,11 +189,15 @@ fader_state = {j: 0 for j in FADERS}
 state_lock = threading.Lock()
 
 # Projector telemetry state
+# warming_pct / cooling_pct default to 100 (the "idle" value per Crestron
+# gauge semantics — 100% = nothing happening). Defaulting these to 0
+# previously caused the state machine to miss the first 100->%<100
+# transition on each new bridge connect, leaving power_state desynced.
 projector_state = {
     "lamp_hours": None,
     "input": None,
-    "warming_pct": 0,
-    "cooling_pct": 0,
+    "warming_pct": 100,
+    "cooling_pct": 100,
     "warming_raw": 0,
     "cooling_raw": 0,
     "power_state": "off",
@@ -245,7 +249,14 @@ def state_cb(sigtype, join, value):
 
 def projector_analog_cb(sigtype, join, value):
     """Warming/cooling gauge callback with state machine.
-    100% = idle, <100% = operation in progress."""
+    100% = idle, <100% = operation in progress.
+
+    'Start' transitions (100 -> <100) gate on prior power_state to avoid
+    spurious flips. 'Complete' transitions (<100 -> 100) are SELF-HEALING:
+    they update power_state regardless of prior state. This means a missed
+    start event (e.g., bridge restart mid-cycle, or projector toggled
+    outside HA) can't permanently desync the dashboard — the next gauge
+    completion will resynchronize."""
     pct = round(value / 65535 * 100) if value else 0
     pct = max(0, min(100, pct))
     with projector_state_lock:
@@ -260,9 +271,10 @@ def projector_analog_cb(sigtype, join, value):
                         projector_state["power_state"] = "warming"
                         log.info(f"Projector POWER STATE: -> warming (lamp ignition)")
                 elif old_pct < 100 and pct == 100:
-                    if projector_state["power_state"] == "warming":
+                    old_state = projector_state["power_state"]
+                    if old_state != "on":
                         projector_state["power_state"] = "on"
-                        log.info(f"Projector POWER STATE: -> on (warm-up complete)")
+                        log.info(f"Projector POWER STATE: {old_state} -> on (warm-up complete)")
         elif join == PROJECTOR_COOLING_JOIN:
             old_pct = projector_state["cooling_pct"]
             projector_state["cooling_raw"] = value
@@ -274,9 +286,10 @@ def projector_analog_cb(sigtype, join, value):
                         projector_state["power_state"] = "cooling"
                         log.info(f"Projector POWER STATE: -> cooling (lamp extinguished)")
                 elif old_pct < 100 and pct == 100:
-                    if projector_state["power_state"] == "cooling":
+                    old_state = projector_state["power_state"]
+                    if old_state != "off":
                         projector_state["power_state"] = "off"
-                        log.info(f"Projector POWER STATE: -> off (cool-down complete)")
+                        log.info(f"Projector POWER STATE: {old_state} -> off (cool-down complete)")
 
 
 def projector_serial_cb(sigtype, join, value):

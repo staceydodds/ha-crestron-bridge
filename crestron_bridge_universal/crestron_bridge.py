@@ -3,9 +3,15 @@
 Crestron CIP Bridge — Universal version.
 
 One bridge codebase for all 8 stages. Per-stage behavior selected via:
-  - PRESET env var: 'stage1' | 'stage7' | 'custom'
+  - PRESET env var: 'large_theatrical' | 'medium_theatrical' | 'broadcast' | 'custom'
     Loads a built-in fader map + default feature flags.
-  - ENABLE_PROJECTOR / ENABLE_MASKING env vars: override feature flags.
+
+    Preset assignments:
+      large_theatrical  → Stages 1, 2  (24 faders + masking)
+      medium_theatrical → Stages 3, 4  (fewer faders + masking)
+      broadcast         → Stages 5, 6, 7, 8  (7 faders + projector via Crestron serial)
+
+  - ENABLE_PROJECTOR_SERIAL / ENABLE_MASKING env vars: override feature flags.
 
 Endpoints (registered conditionally based on enabled features):
   GET  /                              health / connected status
@@ -24,7 +30,7 @@ Endpoints (registered conditionally based on enabled features):
   POST /store/<n>                     pulse store, wait, pulse scene N (Stage 7 pattern)
   POST /store/toggle                  pulse store_join — toggles SIMPL latch (Stage 1 pattern)
 
-  # PROJECTOR (only if enable_projector=true):
+  # PROJECTOR (only if enable_projector_serial=true):
   POST /preset/<pct>                  dimmer preset 0/5/25/50/75/100
   POST /projector/enable              pulse projector enable
   POST /projector/on                  pulse projector ON
@@ -127,23 +133,16 @@ def _patched(self, ciptype, payload):
 cipclient.CIPSocketClient._processPayload = _patched
 
 # ---- PRESETS ----
-# Per-stage fader maps and default feature flags. Stage_id env var prefixes
+# Per-stage fader maps and default feature flags. STAGE_ID env var prefixes
 # fader names to build HA entity IDs (input_number.{stage_id}_{fader_short_name}).
+#
+# Categories:
+#   large_theatrical  → Stages 1, 2  (full theatrical lighting rigs, 24 faders + masking)
+#   medium_theatrical → Stages 3, 4  (smaller theatrical rigs, fewer faders + masking)
+#   broadcast         → Stages 5, 6, 7, 8  (7-fader broadcast layout + Crestron-driven serial projector)
+#   custom            → no built-in faders, no built-in features (manual config required)
 PRESETS = {
-    "stage7": {
-        "faders": {
-            # join: short_name (used to build input_number.stage7_<name>)
-            11: "work_rear",
-            12: "client_track",
-            13: "patchbay",
-            14: "work_mid",
-            15: "credenza",
-            17: "work_front",
-            18: "console",
-        },
-        "default_features": {"projector": True, "masking": False},
-    },
-    "stage1": {
+    "large_theatrical": {
         "faders": {
             10: "square_floor_lights",
             11: "client_center",
@@ -170,24 +169,47 @@ PRESETS = {
             32: "sconces_front_lower",
             33: "console_spots",
         },
-        "default_features": {"projector": False, "masking": True},
+        "default_features": {"projector_serial": False, "masking": True},
+    },
+    "medium_theatrical": {
+        # Stages 3 & 4 — fader joins TBD. Walkthrough pending on stage to confirm
+        # which physical lights map to which analog joins. For now, this preset
+        # enables the masking subsystem so the bridge endpoints are live; faders
+        # can be added here as the walkthrough completes.
+        "faders": {
+            # join: short_name — populate after Stage 3/4 walkthrough
+        },
+        "default_features": {"projector_serial": False, "masking": True},
+    },
+    "broadcast": {
+        "faders": {
+            # join: short_name (used to build input_number.{stage_id}_<name>)
+            11: "work_rear",
+            12: "client_track",
+            13: "patchbay",
+            14: "work_mid",
+            15: "credenza",
+            17: "work_front",
+            18: "console",
+        },
+        "default_features": {"projector_serial": True, "masking": False},
     },
     "custom": {
         "faders": {},
-        "default_features": {"projector": False, "masking": False},
+        "default_features": {"projector_serial": False, "masking": False},
     },
 }
 
 # ---- CONFIG (read from environment variables set by run.sh) ----
 
-PRESET = os.environ.get("PRESET", "stage1").lower()
+PRESET = os.environ.get("PRESET", "large_theatrical").lower()
 PRO2_IP = os.environ.get("PRO2_IP", "10.12.7.15")
 IPID = int(os.environ.get("IPID", "5"))
 HTTP_HOST = "0.0.0.0"
 HTTP_PORT = int(os.environ.get("HTTP_PORT", "8766"))
 STAGE_ID = os.environ.get("STAGE_ID", "stage1")
 
-ENABLE_PROJECTOR = os.environ.get("ENABLE_PROJECTOR", "false").lower() == "true"
+ENABLE_PROJECTOR_SERIAL = os.environ.get("ENABLE_PROJECTOR_SERIAL", "false").lower() == "true"
 ENABLE_MASKING = os.environ.get("ENABLE_MASKING", "false").lower() == "true"
 
 # HA REST API config (supervisor proxy in add-on mode)
@@ -205,8 +227,8 @@ preset_data = PRESETS[PRESET]
 FADERS = dict(preset_data["faders"])
 
 # If env explicitly says enable/disable a feature, that wins. Otherwise use preset default.
-if "ENABLE_PROJECTOR" not in os.environ:
-    ENABLE_PROJECTOR = preset_data["default_features"]["projector"]
+if "ENABLE_PROJECTOR_SERIAL" not in os.environ:
+    ENABLE_PROJECTOR_SERIAL = preset_data["default_features"]["projector_serial"]
 if "ENABLE_MASKING" not in os.environ:
     ENABLE_MASKING = preset_data["default_features"]["masking"]
 
@@ -218,7 +240,7 @@ JOIN_TO_HA_ENTITY = {
 log.info(f"Universal bridge starting")
 log.info(f"  Preset:    {PRESET} ({len(FADERS)} faders)")
 log.info(f"  Stage ID:  {STAGE_ID}")
-log.info(f"  Projector: {'enabled' if ENABLE_PROJECTOR else 'disabled'}")
+log.info(f"  Projector: {'enabled' if ENABLE_PROJECTOR_SERIAL else 'disabled'}")
 log.info(f"  Masking:   {'enabled' if ENABLE_MASKING else 'disabled'}")
 
 # ---- LIGHTING ----
@@ -588,7 +610,7 @@ class Handler(BaseHTTPRequestHandler):
                 "connected": cip.connected if cip else False,
                 "stage": STAGE_ID,
                 "preset": PRESET,
-                "features": {"projector": ENABLE_PROJECTOR, "masking": ENABLE_MASKING},
+                "features": {"projector": ENABLE_PROJECTOR_SERIAL, "masking": ENABLE_MASKING},
             })
         if self.path == "/state":
             with state_lock, indicator_lock, projector_state_lock:
@@ -601,10 +623,10 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 if ENABLE_MASKING:
                     body["indicators"] = dict(indicator_state)
-                if ENABLE_PROJECTOR:
+                if ENABLE_PROJECTOR_SERIAL:
                     body["projector"] = dict(projector_state)
                 return self._send(200, body)
-        if self.path == "/projector/state" and ENABLE_PROJECTOR:
+        if self.path == "/projector/state" and ENABLE_PROJECTOR_SERIAL:
             with projector_state_lock:
                 return self._send(200, dict(projector_state))
         return self._send(404, {"error": "not found"})
@@ -655,7 +677,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True})
 
             # ---- PROJECTOR (only if enabled) ----
-            if ENABLE_PROJECTOR:
+            if ENABLE_PROJECTOR_SERIAL:
                 if len(parts) == 2 and parts[0] == "preset":
                     pct = int(parts[1])
                     if apply_preset(pct):
@@ -718,7 +740,7 @@ def main():
     cip.subscribe("a", STORE_ARMED_INDICATOR_JOIN, indicator_analog_cb)
 
     # ---- SUBSCRIBE: projector telemetry (conditional) ----
-    if ENABLE_PROJECTOR:
+    if ENABLE_PROJECTOR_SERIAL:
         cip.subscribe("a", PROJECTOR_WARMUP_JOIN, projector_analog_cb)
         cip.subscribe("a", PROJECTOR_COOLING_JOIN, projector_analog_cb)
         log.info(f"Subscribed: projector gauges (a{PROJECTOR_WARMUP_JOIN} warming, a{PROJECTOR_COOLING_JOIN} cooling)")

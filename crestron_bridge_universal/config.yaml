@@ -1,0 +1,36 @@
+name: "Crestron CIP Bridge (Universal)"
+description: "HTTP API bridge to a Crestron Pro 2 via CIP protocol. Supports all 8 stages via preset selection + feature flags."
+version: "2.0.0"
+slug: "crestron_bridge_universal"
+init: false
+arch:
+  - amd64
+  - aarch64
+url: "https://github.com/staceydodds/ha-crestron-bridge"
+boot: auto
+startup: application
+homeassistant_api: true
+hassio_api: false
+host_network: false
+ports:
+  "8765/tcp": null
+ports_description:
+  "8765/tcp": "Bridge HTTP API port (overridden by http_port option)"
+options:
+  preset: "stage1"
+  pro2_ip: "10.12.7.15"
+  ipid: 5
+  stage_id: "stage1"
+  http_port: 8766
+  log_level: "info"
+  enable_projector: false
+  enable_masking: true
+schema:
+  preset: list(stage1|stage7|custom)
+  pro2_ip: str
+  ipid: int(1,255)
+  stage_id: str
+  http_port: port
+  log_level: list(debug|info|warning|error)
+  enable_projector: bool
+  enable_masking: bool

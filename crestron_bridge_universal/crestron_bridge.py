@@ -259,6 +259,26 @@ PRESETS = {
                     32: "_reserved_32",
                     33: "_reserved_33",
                 },
+                # Per-stage masking direction joins — discovered 2026-06-18
+                # via curl probe of /masking/{which}/{direction} endpoints.
+                # Stage 4's SIMPL wires masking directions in a DIFFERENT
+                # order than Stage 1's:
+                #   Stage 1: 160=TOP_OPEN, 161=TOP_CLOSE, 162=SIDE_CLOSE,
+                #            163=SIDE_OPEN, 164=BOT_CLOSE, 165=BOT_OPEN
+                #   Stage 4: 160=SIDE_OPEN, 161=SIDE_CLOSE, 162=unused,
+                #            163=unused, 164=TOP+BOT_CLOSE, 165=TOP+BOT_OPEN
+                # Top + bottom axes are LINKED at the SIMPL level on Stage 4,
+                # so /masking/bot/{open,close} aliases to /masking/top/{...}.
+                "masking_digitals": {
+                    ("top",    "open"):  165,
+                    ("top",    "close"): 164,
+                    ("side",   "open"):  160,
+                    ("side",   "close"): 161,
+                    ("bot",    "open"):  165,    # linked to top
+                    ("bot",    "close"): 164,    # linked to top
+                    ("bottom", "open"):  165,
+                    ("bottom", "close"): 164,
+                },
             },
         },
     },
@@ -400,7 +420,11 @@ PROJECTOR_WARMUP_JOIN = 7
 PROJECTOR_COOLING_JOIN = 8
 SERIAL_JOIN_DISCOVERY_RANGE = range(1, 51)
 
-# ---- MASKING (Stage 1) ----
+# ---- MASKING (Stage 1 reference layout — overridable per stage) ----
+# Default values match Stage 1's SIMPL wiring. Per-stage overrides live in
+# PRESETS[preset]["stages"][STAGE_ID]["masking_digitals"] and are applied
+# right below this block. Stage 4 is the canonical example of a stage with
+# different masking direction wiring than Stage 1.
 MASKING_DIGITALS = {
     ("top",    "open"):  160,
     ("top",    "close"): 161,
@@ -411,6 +435,17 @@ MASKING_DIGITALS = {
     ("bottom", "close"): 164,
     ("bottom", "open"):  165,
 }
+
+# Per-stage override: if the stage's preset entry has a masking_digitals
+# dict, swap it in. This lets stages whose SIMPL wires the direction
+# commands differently (e.g. Stage 4) work without code branching.
+if "masking_digitals" in stage_data:
+    MASKING_DIGITALS = dict(stage_data["masking_digitals"])
+    log.info(
+        f"Using per-stage masking_digitals override for {STAGE_ID} "
+        f"({len(MASKING_DIGITALS)} entries)"
+    )
+
 MASKING_ENABLE_JOIN = 168
 MASKING_STOP_JOIN = 170
 MASKING_STORE_JOIN = 171

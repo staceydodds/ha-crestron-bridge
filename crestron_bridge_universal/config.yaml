@@ -1,6 +1,6 @@
 name: "Crestron CIP Bridge (Universal)"
 description: "HTTP API bridge to a Crestron Pro 2 via CIP protocol. Supports all 8 stages via room-category preset (large/medium/small) + per-stage fader map."
-version: "3.0.0"
+version: "3.0.1"
 slug: "crestron_bridge_universal"
 init: false
 arch:

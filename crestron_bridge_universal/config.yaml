@@ -1,6 +1,6 @@
 name: "Crestron CIP Bridge (Universal)"
-description: "HTTP API bridge to a Crestron Pro 2 via CIP protocol. Supports all 8 stages via preset selection + feature flags."
-version: "2.0.2"
+description: "HTTP API bridge to a Crestron Pro 2 via CIP protocol. Supports all 8 stages via room-category preset (large/medium/small) + per-stage fader map."
+version: "3.0.0"
 slug: "crestron_bridge_universal"
 init: false
 arch:
@@ -17,7 +17,7 @@ ports:
 ports_description:
   "8766/tcp": "Bridge HTTP API (default 8766 — exposed to host for HA Core access)"
 options:
-  preset: "large_theatrical"
+  preset: "large"
   pro2_ip: "10.12.7.15"
   ipid: 5
   stage_id: "stage1"
@@ -26,7 +26,7 @@ options:
   enable_projector_serial: false
   enable_masking: true
 schema:
-  preset: list(large_theatrical|medium_theatrical|broadcast|custom)
+  preset: list(large|medium|small|custom|large_theatrical|medium_theatrical|broadcast)
   pro2_ip: str
   ipid: int(1,255)
   stage_id: str

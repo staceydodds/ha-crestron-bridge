@@ -3,13 +3,27 @@
 Crestron CIP Bridge — Universal version.
 
 One bridge codebase for all 8 stages. Per-stage behavior selected via:
-  - PRESET env var: 'large_theatrical' | 'medium_theatrical' | 'broadcast' | 'custom'
-    Loads a built-in fader map + default feature flags.
+  - PRESET env var: 'large' | 'medium' | 'small' | 'custom'
+    Loads a category-specific feature set (masking mode, projector control
+    path) and then a stage-specific fader map.
 
-    Preset assignments:
-      large_theatrical  → Stages 1, 2  (24 faders + masking)
-      medium_theatrical → Stages 3, 4  (fewer faders + masking)
-      broadcast         → Stages 5, 6, 7, 8  (7 faders + projector via Crestron serial)
+    Preset categories:
+      large  → Stages 1, 2   (3-axis independent masking, Barco projector)
+      medium → Stages 3, 4   (top+bot linked masking, Panasonic via PJLink)
+      small  → Stages 5, 6, 7, 8  (no masking, NEC via Crestron serial)
+
+    Per-stage fader maps live INSIDE each preset under "stages": each stage
+    has its own subset of joins/labels populated when its on-stage walkthrough
+    completes. Stages without recon get an empty fader map (bridge still
+    starts; masking + scenes still work; faders show nothing in /state).
+
+    Legacy preset names ('large_theatrical' / 'medium_theatrical' /
+    'broadcast') are aliased to the new names — no add-on config changes
+    required for existing production deployments.
+
+  - STAGE_ID env var: required. Selects which entry in the preset's "stages"
+    dict to load. E.g. STAGE_ID='stage4' under PRESET='medium' loads the
+    Stage 4 fader map.
 
   - ENABLE_PROJECTOR_SERIAL / ENABLE_MASKING env vars: override feature flags.
 
@@ -133,71 +147,171 @@ def _patched(self, ciptype, payload):
 cipclient.CIPSocketClient._processPayload = _patched
 
 # ---- PRESETS ----
-# Per-stage fader maps and default feature flags. STAGE_ID env var prefixes
-# fader names to build HA entity IDs (input_number.{stage_id}_{fader_short_name}).
+# Per-stage fader maps and default feature flags, organized by room category.
 #
-# Categories:
-#   large_theatrical  → Stages 1, 2  (full theatrical lighting rigs, 24 faders + masking)
-#   medium_theatrical → Stages 3, 4  (smaller theatrical rigs, fewer faders + masking)
-#   broadcast         → Stages 5, 6, 7, 8  (7-fader broadcast layout + Crestron-driven serial projector)
-#   custom            → no built-in faders, no built-in features (manual config required)
+# CATEGORIES (each maps to a "type of room" not a specific stage):
+#   large  → Stages 1, 2   (full theatrical rigs, 3-axis independent masking, Barco projector)
+#   medium → Stages 3, 4   (smaller theatrical rigs, linked top+bot masking, Panasonic via PJLink)
+#   small  → Stages 5-8    (broadcast/voiceover rigs, no masking, NEC via Crestron serial)
+#   custom → no built-in faders, no built-in features (manual config required)
+#
+# PER-STAGE MAPS:
+# Each preset has a "stages" dict keyed by STAGE_ID. The bridge looks up the
+# fader map for THIS stage at startup: PRESETS[PRESET]["stages"][STAGE_ID].
+# Adding a new stage = adding one entry under the right preset.
+#
+# RESERVED JOINS:
+# All theatrical/medium SIMPL programs publish 24 analog joins (10-33). Some
+# of those joins are wired to real fixtures; others are SIMPL ghost channels
+# (legacy fixture banks that were removed but the signals never cleaned up).
+# Per-stage maps include ALL joins, with real fixtures labeled by fixture
+# name and unwired joins labeled "_reserved_NN". Labels starting with "_" are
+# SUBSCRIBED for diagnostic visibility but NOT forwarded to HA entities —
+# the bridge's forward_state_to_ha() filters them out. This preserves
+# future-expansion headroom (drop a real fixture name into a _reserved slot
+# when one is added) without polluting HA logs.
+#
+# BACKWARD COMPAT:
+# The old preset names (large_theatrical / medium_theatrical / broadcast) are
+# aliased to the new names below — see PRESET_ALIASES — so existing add-on
+# configs on Stages 1, 7 keep working without simultaneous fleet update.
 PRESETS = {
-    "large_theatrical": {
-        "faders": {
-            10: "square_floor_lights",
-            11: "client_center",
-            12: "game_left",
-            13: "patch_bay",
-            14: "editor_right",
-            15: "editor_left",
-            16: "game_right",
-            17: "credenza",
-            18: "side_step_lights",
-            19: "work_rear",
-            20: "work_middle",
-            21: "client_wide",
-            22: "sconces_rear_upper",
-            23: "sconces_rear_lower",
-            24: "pony_front",
-            25: "work_front",
-            26: "sconces_mid_lower",
-            27: "sconces_mid_upper",
-            28: "client_spots",
-            29: "wall_wash",
-            30: "pony_rear",
-            31: "sconces_front_upper",
-            32: "sconces_front_lower",
-            33: "console_spots",
-        },
+    "large": {
         "default_features": {"projector_serial": False, "masking": True},
-    },
-    "medium_theatrical": {
-        # Stages 3 & 4 — fader joins TBD. Walkthrough pending on stage to confirm
-        # which physical lights map to which analog joins. For now, this preset
-        # enables the masking subsystem so the bridge endpoints are live; faders
-        # can be added here as the walkthrough completes.
-        "faders": {
-            # join: short_name — populate after Stage 3/4 walkthrough
+        "masking_mode": "independent",  # 3 independent axes (top, side, bot)
+        "stages": {
+            "stage1": {
+                "faders": {
+                    10: "square_floor_lights",
+                    11: "client_center",
+                    12: "game_left",
+                    13: "patch_bay",
+                    14: "editor_right",
+                    15: "editor_left",
+                    16: "game_right",
+                    17: "credenza",
+                    18: "side_step_lights",
+                    19: "work_rear",
+                    20: "work_middle",
+                    21: "client_wide",
+                    22: "sconces_rear_upper",
+                    23: "sconces_rear_lower",
+                    24: "pony_front",
+                    25: "work_front",
+                    26: "sconces_mid_lower",
+                    27: "sconces_mid_upper",
+                    28: "client_spots",
+                    29: "wall_wash",
+                    30: "pony_rear",
+                    31: "sconces_front_upper",
+                    32: "sconces_front_lower",
+                    33: "console_spots",
+                },
+            },
+            "stage2": {
+                # Walkthrough PENDING. Stage 2 is expected to mirror Stage 1's
+                # layout (built from the same template), but verify on-stage
+                # before populating. For now, faders empty = bridge runs with
+                # masking + scenes only until Stage 2 recon completes.
+                "faders": {},
+            },
         },
+    },
+    "medium": {
         "default_features": {"projector_serial": False, "masking": True},
-    },
-    "broadcast": {
-        "faders": {
-            # join: short_name (used to build input_number.{stage_id}_<name>)
-            11: "work_rear",
-            12: "client_track",
-            13: "patchbay",
-            14: "work_mid",
-            15: "credenza",
-            17: "work_front",
-            18: "console",
+        "masking_mode": "linked_top_bottom",  # top + bot axes linked at SIMPL; side separate
+        "stages": {
+            "stage3": {
+                # Walkthrough PENDING. Operator noted Stage 3 has MORE than 13
+                # working fixtures — closer to Stage 1's count, possibly 16-20.
+                # Don't presume the layout from Stage 4's. Run the walkthrough
+                # script (cip-scripts/Stage4-Fader-Walkthrough-V2.sh adapted)
+                # before populating.
+                "faders": {},
+            },
+            "stage4": {
+                # Discovered via on-stage recon 2026-06-16.
+                # 13 working fixtures + 11 _reserved (SIMPL ghost channels
+                # from pre-2025 sconces upper/lower banks).
+                "faders": {
+                    10: "client_center",
+                    11: "client_spots",
+                    12: "client_wide",
+                    13: "door_spots",
+                    14: "patch_bay",
+                    15: "credenza",
+                    16: "console_spots",
+                    17: "_reserved_17",
+                    18: "work_middle",
+                    19: "work_front",
+                    20: "square_floor_lights",
+                    21: "step_lights",
+                    22: "_reserved_22",
+                    23: "sconces",
+                    24: "pony_wall",
+                    25: "_reserved_25",
+                    26: "_reserved_26",
+                    27: "_reserved_27",
+                    28: "_reserved_28",
+                    29: "_reserved_29",
+                    30: "_reserved_30",
+                    31: "_reserved_31",
+                    32: "_reserved_32",
+                    33: "_reserved_33",
+                },
+            },
         },
+    },
+    "small": {
         "default_features": {"projector_serial": True, "masking": False},
+        "masking_mode": "none",
+        "stages": {
+            "stage5": {
+                # Walkthrough PENDING. Expected to mirror Stage 7's broadcast
+                # layout but verify on-stage. Operator chose "Option A":
+                # subscribe to all 24 joins for future expansion.
+                "faders": {},
+            },
+            "stage6": {
+                "faders": {},  # walkthrough pending
+            },
+            "stage7": {
+                # Currently 7 known faders from initial broadcast recon.
+                # Operator chose Option A for small/broadcast: subscribe to
+                # all 24 joins. Stage 7's existing production keeps working
+                # with these 7; remaining 17 joins become _reserved when a
+                # re-walkthrough confirms what's actually wired/unwired in
+                # Stage 7's SIMPL. Until then, leaving at 7 is correct —
+                # the bridge subscribes only to declared joins.
+                "faders": {
+                    11: "work_rear",
+                    12: "client_track",
+                    13: "patchbay",
+                    14: "work_mid",
+                    15: "credenza",
+                    17: "work_front",
+                    18: "console",
+                },
+            },
+            "stage8": {
+                "faders": {},  # walkthrough pending
+            },
+        },
     },
     "custom": {
-        "faders": {},
         "default_features": {"projector_serial": False, "masking": False},
+        "masking_mode": "none",
+        "stages": {},  # custom users define their own faders via env or override
     },
+}
+
+# Backward-compat aliases for stages that haven't yet migrated to the new
+# preset names. These resolve to the new names at startup; functionally
+# identical to setting the new name in add-on config.
+PRESET_ALIASES = {
+    "large_theatrical": "large",
+    "medium_theatrical": "medium",
+    "broadcast": "small",
 }
 
 # ---- CONFIG (read from environment variables set by run.sh) ----
@@ -219,12 +333,38 @@ HA_TOKEN = os.environ.get("HA_TOKEN") or os.environ.get("SUPERVISOR_TOKEN", "")
 if not HA_TOKEN:
     log.warning("No HA_TOKEN / SUPERVISOR_TOKEN set — fader state forwarding to HA disabled")
 
+# Apply backward-compat alias if the configured preset name is an old one
+if PRESET in PRESET_ALIASES:
+    new_preset = PRESET_ALIASES[PRESET]
+    log.info(f"Preset name '{PRESET}' is aliased to '{new_preset}' — using new name")
+    PRESET = new_preset
+
 if PRESET not in PRESETS:
-    log.error(f"Unknown preset '{PRESET}'. Valid: {list(PRESETS.keys())}")
+    log.error(
+        f"Unknown preset '{PRESET}'. "
+        f"Valid: {list(PRESETS.keys())} "
+        f"(or legacy aliases: {list(PRESET_ALIASES.keys())})"
+    )
     sys.exit(1)
 
 preset_data = PRESETS[PRESET]
-FADERS = dict(preset_data["faders"])
+
+# Look up THIS stage's fader map from the preset's stages dict
+stage_data = preset_data.get("stages", {}).get(STAGE_ID, {})
+if not stage_data:
+    log.warning(
+        f"No stage-specific data for STAGE_ID='{STAGE_ID}' under preset '{PRESET}'. "
+        f"Bridge will start with 0 faders (masking/scenes still functional). "
+        f"Add an entry under PRESETS['{PRESET}']['stages']['{STAGE_ID}'] when "
+        f"the walkthrough for this stage completes."
+    )
+
+FADERS = dict(stage_data.get("faders", {}))
+
+# Expose masking_mode for any downstream code that wants to act on it
+# (today: informational only; future: could gate /masking/bot/* on
+# linked_top_bottom and return a clearer 4xx instead of pulsing dead joins).
+MASKING_MODE = preset_data.get("masking_mode", "independent")
 
 # If env explicitly says enable/disable a feature, that wins. Otherwise use preset default.
 if "ENABLE_PROJECTOR_SERIAL" not in os.environ:
@@ -317,10 +457,19 @@ cip = None
 # ---- HA FORWARDING ----
 
 def forward_state_to_ha(join, value):
-    """Push fader value back to HA input_number for slider sync."""
+    """Push fader value back to HA input_number for slider sync.
+
+    Skips joins whose fader label starts with "_" — those are RESERVED slots
+    (SIMPL channels with no physical fixture). They're subscribed for
+    diagnostic visibility in /state but should never be forwarded to HA
+    because no input_number entity exists for them and we'd just log
+    warnings on every value change.
+    """
     if join not in JOIN_TO_HA_ENTITY:
         return
     if not HA_TOKEN:
+        return
+    if FADERS.get(join, "").startswith("_"):
         return
     entity_id = JOIN_TO_HA_ENTITY[join]
     pct = round(value / 65535 * 100)

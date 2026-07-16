@@ -209,11 +209,53 @@ PRESETS = {
                 },
             },
             "stage2": {
-                # Walkthrough PENDING. Stage 2 is expected to mirror Stage 1's
-                # layout (built from the same template), but verify on-stage
-                # before populating. For now, faders empty = bridge runs with
-                # masking + scenes only until Stage 2 recon completes.
-                "faders": {},
+                # Discovered via on-stage observer-mode CIP recon 2026-07-15.
+                # Mirrors Stage 1's fader layout intentionally — SIMPL program
+                # is the same template. Names preserved even for known wiring
+                # anomalies so future re-wiring by the electricians results in
+                # the dashboard already reflecting the intended separate controls.
+                #
+                # Known anomalies on Stage 2 (as of 2026-07-15):
+                #   - join 11 (client_center): bulb out; fixture works when lamp replaced
+                #   - join 12 (game_left) + join 16 (game_right): currently
+                #     wired to the same physical circuit at the electrical panel.
+                #     Both faders in SIMPL respond, but they drive the same
+                #     fixture pair. Left as separate joins here so the split
+                #     can be restored after electrician untangles the wiring.
+                #   - join 20 (work_middle) + join 25 (work_front): metal
+                #     halide fixtures on a Lutron circuit that doesn't dim.
+                #     Any non-zero value = fixture ON. Analog-off (value 0)
+                #     works. Not a Crestron issue; treat as on/off in UI.
+                #   - join 21 (client_wide): bulb likely out. Circuit is
+                #     presumed working; identical control to Stage 1.
+                #   - join 34 (analog): PHANTOM. SIMPL touches it in scenes
+                #     but nothing is wired. Excluded from this map deliberately.
+                "faders": {
+                    10: "square_floor_lights",
+                    11: "client_center",
+                    12: "game_left",
+                    13: "patch_bay",
+                    14: "editor_right",
+                    15: "editor_left",
+                    16: "game_right",
+                    17: "credenza",
+                    18: "side_step_lights",
+                    19: "work_rear",
+                    20: "work_middle",
+                    21: "client_wide",
+                    22: "sconces_rear_upper",
+                    23: "sconces_rear_lower",
+                    24: "pony_front",
+                    25: "work_front",
+                    26: "sconces_mid_lower",
+                    27: "sconces_mid_upper",
+                    28: "client_spots",
+                    29: "wall_wash",
+                    30: "pony_rear",
+                    31: "sconces_front_upper",
+                    32: "sconces_front_lower",
+                    33: "console_spots",
+                },
             },
         },
     },

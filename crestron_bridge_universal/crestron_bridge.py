@@ -179,6 +179,14 @@ PRESETS = {
     "large": {
         "default_features": {"projector_serial": False, "masking": True},
         "masking_mode": "independent",  # 3 independent axes (top, side, bot)
+        # Digital pulses fired IN ADDITION to analog fader writes when the
+        # /all_off and /all_on endpoints are called. Discovered on Stage 2
+        # 2026-07-15: SIMPL uses these digitals to release latched relays
+        # on fixtures like Credenza and Editor Left. Without pulsing d140,
+        # analog-only /all_off leaves those fixtures lit. Verified same
+        # digitals on Stages 1 and 2 (identical SIMPL template).
+        "all_off_digital": 140,
+        "all_on_digital": 145,
         "stages": {
             "stage1": {
                 "faders": {
@@ -450,6 +458,15 @@ log.info(f"  Masking:   {'enabled' if ENABLE_MASKING else 'disabled'}")
 SCENE_BASE = 131
 STORE_JOIN = 131  # Lighting store (latching for Stage 1, used for store-then-scene on Stage 7)
 STORE_ARMED_INDICATOR_JOIN = 9  # analog, value>0 = lighting store latch armed (Stage 1)
+
+# ---- ALL OFF / ALL ON digital pulses ----
+# Configurable per-preset. When set, /all_off and /all_on will pulse these
+# digitals AFTER writing analog values, so SIMPL can release latched relays
+# that don't respond to analog-only writes (verified needed on Stage 2's
+# Credenza + Editor Left circuits, 2026-07-16). If not configured for a
+# preset, the pulse is skipped (harmless — analog writes still happen).
+ALL_OFF_JOIN = preset_data.get("all_off_digital")  # None = skip pulse
+ALL_ON_JOIN = preset_data.get("all_on_digital")    # None = skip pulse
 
 # Dimmer presets (Stage 7 only — but harmless to define)
 PRESET_JOINS = {0: 140, 5: 141, 25: 142, 50: 143, 75: 144, 100: 145}
@@ -737,6 +754,14 @@ def apply_preset(pct):
 def set_all(value):
     for j in FADERS:
         set_fader_raw(j, value)
+    # Also fire the digital ALL OFF / ALL ON pulse if the preset configures it.
+    # SIMPL uses these to release latched relays that don't respond to analog
+    # writes alone (e.g. Stage 2 Credenza + Editor Left). No-op if the preset
+    # doesn't set all_off_digital / all_on_digital.
+    if value == 0 and ALL_OFF_JOIN is not None:
+        pulse(ALL_OFF_JOIN)
+    elif value >= 65535 and ALL_ON_JOIN is not None:
+        pulse(ALL_ON_JOIN)
 
 
 def projector_enable():

@@ -353,7 +353,20 @@ PRESETS = {
                 },
             },
             "stage6": {
-                "faders": {},  # walkthrough pending
+                # On-stage walkthrough 2026-09-26 (direct analog writes, each
+                # join tested individually). Identical to Stage 5. Join 13
+                # (patchbay) lit nothing - lamps believed out, as on Stage 7.
+                # Join 16 carries a level in scenes but drives nothing.
+                "faders": {
+                    11: "work_rear",
+                    12: "client_track",
+                    13: "patchbay",
+                    14: "work_mid",
+                    15: "credenza",
+                    16: "_reserved_16",
+                    17: "work_front",
+                    18: "console",
+                },
             },
             "stage7": {
                 # Currently 7 known faders from initial broadcast recon.

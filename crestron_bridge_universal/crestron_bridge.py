@@ -670,7 +670,13 @@ def masking_enable_cb(sigtype, join, value):
 
 
 def projector_analog_cb(sigtype, join, value):
-    """Warming/cooling gauge state machine. 100% = idle, <100% = in progress."""
+    """Warming/cooling gauge state machine. 100% = idle, <100% = in progress.
+
+    Cooling takes priority: Stage 6's SIMPL (2026-09-26) also runs the
+    warming gauge (a7) partway through a cool-down. Without this guard the
+    bridge flipped cooling -> warming -> on mid-shutdown. While cooling is
+    in progress, warming-gauge movement is ignored for power_state.
+    """
     pct = round(value / 65535 * 100) if value else 0
     pct = max(0, min(100, pct))
     with projector_state_lock:
@@ -679,12 +685,16 @@ def projector_analog_cb(sigtype, join, value):
             projector_state["warming_raw"] = value
             if old_pct != pct:
                 projector_state["warming_pct"] = pct
-                if old_pct == 100 and pct < 100:
+                cooling_active = (projector_state["power_state"] == "cooling"
+                                  or projector_state["cooling_pct"] < 100)
+                if cooling_active:
+                    log.debug(f"Warming gauge moved to {pct}% during cool-down; ignored")
+                elif old_pct == 100 and pct < 100:
                     if projector_state["power_state"] != "warming":
                         projector_state["power_state"] = "warming"
                         log.info(f"Projector POWER STATE: -> warming")
                 elif old_pct < 100 and pct == 100:
-                    if projector_state["power_state"] != "on":
+                    if projector_state["power_state"] == "warming":
                         projector_state["power_state"] = "on"
                         log.info(f"Projector POWER STATE: -> on")
         elif join == PROJECTOR_COOLING_JOIN:

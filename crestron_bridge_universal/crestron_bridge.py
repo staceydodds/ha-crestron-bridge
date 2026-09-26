@@ -337,10 +337,20 @@ PRESETS = {
         "masking_mode": "none",
         "stages": {
             "stage5": {
-                # Walkthrough PENDING. Expected to mirror Stage 7's broadcast
-                # layout but verify on-stage. Operator chose "Option A":
-                # subscribe to all 24 joins for future expansion.
-                "faders": {},
+                # On-stage walkthrough 2026-09-26 (direct analog writes, each
+                # join tested individually). Same layout as Stage 7. Join 16
+                # carries a level in every scene but drives nothing visible.
+                # Stage 5's SIMPL accepts direct analog fader writes.
+                "faders": {
+                    11: "work_rear",
+                    12: "client_track",
+                    13: "patchbay",
+                    14: "work_mid",
+                    15: "credenza",
+                    16: "_reserved_16",
+                    17: "work_front",
+                    18: "console",
+                },
             },
             "stage6": {
                 "faders": {},  # walkthrough pending

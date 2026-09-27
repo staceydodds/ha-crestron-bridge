@@ -272,12 +272,50 @@ PRESETS = {
         "masking_mode": "linked_top_bottom",  # top + bot axes linked at SIMPL; side separate
         "stages": {
             "stage3": {
-                # Walkthrough PENDING. Operator noted Stage 3 has MORE than 13
-                # working fixtures — closer to Stage 1's count, possibly 16-20.
-                # Don't presume the layout from Stage 4's. Run the walkthrough
-                # script (cip-scripts/Stage4-Fader-Walkthrough-V2.sh adapted)
-                # before populating.
-                "faders": {},
+                # On-stage walkthrough 2026-09-27 (direct analog writes, each
+                # join tested individually). Program PARAMOUNT_STG3_82226.
+                #   - 23 drives BOTH rear sconce rows (upper only lights near
+                #     full level).
+                #   - 27/28 front sconces are cross-wired (each join lights
+                #     upper on one side, lower on the other) — treated as ONE
+                #     dashboard fader; 28 is written alongside 27 by HA and is
+                #     hidden here with a "_" label. Goes away at renovation.
+                #   - 12, 22, 29-33 drive nothing.
+                # WRITE PACING: a fader write that follows another within
+                # ~0.1s is dropped by the room (seen on 17 Credenza and 25
+                # Middle Sconces Upper: the "off" is lost and the light stays
+                # on). write_gap_ms spaces consecutive analog writes.
+                # All On / All Off also pulse d145 / d140, which release the
+                # Credenza reliably (same as Stage 2).
+                "write_gap_ms": 200,
+                "all_off_digital": 140,
+                "all_on_digital": 145,
+                "faders": {
+                    10: "work_rear",
+                    11: "client_spots",
+                    12: "_reserved_12",
+                    13: "client_wide",
+                    14: "patch_bay",
+                    15: "step_lights",
+                    16: "console",
+                    17: "credenza",
+                    18: "red_floor_lights",
+                    19: "work_middle",
+                    20: "work_rear_entrance",
+                    21: "work_front",
+                    22: "_reserved_22",
+                    23: "rear_sconces",
+                    24: "pony_wall",
+                    25: "middle_sconces_upper",
+                    26: "middle_sconces_lower",
+                    27: "front_sconces",
+                    28: "_front_sconces_b",
+                    29: "_reserved_29",
+                    30: "_reserved_30",
+                    31: "_reserved_31",
+                    32: "_reserved_32",
+                    33: "_reserved_33",
+                },
             },
             "stage4": {
                 # Discovered via on-stage recon 2026-06-16.
@@ -488,8 +526,18 @@ STORE_ARMED_INDICATOR_JOIN = 9  # analog, value>0 = lighting store latch armed (
 # that don't respond to analog-only writes (verified needed on Stage 2's
 # Credenza + Editor Left circuits, 2026-07-16). If not configured for a
 # preset, the pulse is skipped (harmless — analog writes still happen).
-ALL_OFF_JOIN = preset_data.get("all_off_digital")  # None = skip pulse
-ALL_ON_JOIN = preset_data.get("all_on_digital")    # None = skip pulse
+# A stage entry can override the preset's value (Stage 3 sets its own).
+ALL_OFF_JOIN = stage_data.get("all_off_digital", preset_data.get("all_off_digital"))  # None = skip
+ALL_ON_JOIN = stage_data.get("all_on_digital", preset_data.get("all_on_digital"))      # None = skip
+
+# ---- WRITE PACING (per stage, default off) ----
+# Minimum gap between consecutive analog fader writes. Stage 3's room drops a
+# write that arrives within ~0.1s of the previous one (2026-09-27).
+WRITE_GAP_SEC = float(stage_data.get("write_gap_ms", 0)) / 1000.0
+_write_pace_lock = threading.Lock()
+_last_analog_write = 0.0
+if WRITE_GAP_SEC > 0:
+    log.info(f"Write pacing: {int(WRITE_GAP_SEC * 1000)} ms between fader writes")
 
 # Dimmer presets (Stage 7 only — but harmless to define)
 PRESET_JOINS = {0: 140, 5: 141, 25: 142, 50: 143, 75: 144, 100: 145}
@@ -743,10 +791,17 @@ def pulse(join):
 
 
 def set_fader_raw(join, value):
+    global _last_analog_write
     value = max(0, min(65535, int(value)))
-    with last_write_lock:
-        last_write[join] = (time.monotonic(), value)
-    cip.set("a", join, value)
+    with _write_pace_lock:
+        if WRITE_GAP_SEC > 0:
+            wait = WRITE_GAP_SEC - (time.monotonic() - _last_analog_write)
+            if wait > 0:
+                time.sleep(wait)
+        with last_write_lock:
+            last_write[join] = (time.monotonic(), value)
+        cip.set("a", join, value)
+        _last_analog_write = time.monotonic()
 
 
 def set_fader_pct(join, pct):

@@ -316,6 +316,22 @@ PRESETS = {
                     32: "_reserved_32",
                     33: "_reserved_33",
                 },
+                # Masking probed 2026-09-27 via the bridge — identical to
+                # Stage 4: side on 160/161, top+bottom LINKED on 164/165.
+                # Presets 172-175 recall correctly. Stage 3's SIMPL turns
+                # Masking Enable (168, toggle) OFF by itself ~12 s after a
+                # move, so callers must check masking_enable_armed before
+                # pulsing /masking/enable.
+                "masking_digitals": {
+                    ("top",    "open"):  165,
+                    ("top",    "close"): 164,
+                    ("side",   "open"):  160,
+                    ("side",   "close"): 161,
+                    ("bot",    "open"):  165,    # linked to top
+                    ("bot",    "close"): 164,    # linked to top
+                    ("bottom", "open"):  165,
+                    ("bottom", "close"): 164,
+                },
             },
             "stage4": {
                 # Discovered via on-stage recon 2026-06-16.
